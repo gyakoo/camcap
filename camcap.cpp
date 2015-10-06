@@ -23,102 +23,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <tchar.h>
-#include <dshow.h>
-#include <uuids.h>
-#include <aviriff.h>
-#include <Windows.h>
-#include <comutil.h>
-#include <stdint.h>
+
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
-
-#pragma comment(lib, "uuid.lib")
-#pragma comment(lib, "strmiids.lib")
-#pragma comment(lib, "comsuppw.lib")
-//#pragma comment(lib, "ole32.lib")
-//#pragma comment(lib, "dxguid.lib")
-
-
-// Due to a missing qedit.h in recent Platform SDKs, we've replicated the relevant contents here
-// #include <qedit.h>
-MIDL_INTERFACE("0579154A-2B53-4994-B0D0-E773148EFF85")
-ISampleGrabberCB : public IUnknown
-{
-public:
-  virtual HRESULT STDMETHODCALLTYPE SampleCB(
-    double SampleTime,
-    IMediaSample *pSample) = 0;
-
-  virtual HRESULT STDMETHODCALLTYPE BufferCB(
-    double SampleTime,
-    BYTE *pBuffer,
-    long BufferLen) = 0;
-
-};
-
-MIDL_INTERFACE("6B652FFF-11FE-4fce-92AD-0266B5D7C78F")
-ISampleGrabber : public IUnknown
-{
-public:
-  virtual HRESULT STDMETHODCALLTYPE SetOneShot(
-    BOOL OneShot) = 0;
-
-  virtual HRESULT STDMETHODCALLTYPE SetMediaType(
-    const AM_MEDIA_TYPE *pType) = 0;
-
-  virtual HRESULT STDMETHODCALLTYPE GetConnectedMediaType(
-    AM_MEDIA_TYPE *pType) = 0;
-
-  virtual HRESULT STDMETHODCALLTYPE SetBufferSamples(
-    BOOL BufferThem) = 0;
-
-  virtual HRESULT STDMETHODCALLTYPE GetCurrentBuffer(
-    /* [out][in] */ long *pBufferSize,
-    /* [out] */ long *pBuffer) = 0;
-
-  virtual HRESULT STDMETHODCALLTYPE GetCurrentSample(
-    /* [retval][out] */ IMediaSample **ppSample) = 0;
-
-  virtual HRESULT STDMETHODCALLTYPE SetCallback(
-    ISampleGrabberCB *pCallback,
-    long WhichMethodToCallback) = 0;
-
-};
-EXTERN_C const CLSID CLSID_SampleGrabber;
-EXTERN_C const IID IID_ISampleGrabber;
-EXTERN_C const CLSID CLSID_NullRenderer;
-
-
-//===-----------------------------------------------------------===//
-//===-----------------------------------------------------------===//
-template<typename T>
-static void SafeRelease(T& ptr)
-{
-  if (ptr)
-  {
-    ptr->Release();
-    ptr = NULL;
-  }
-}
-
-template<typename T>
-static void SafeFree(T& ptr)
-{
-  if (ptr)
-  {
-    free(ptr);
-    ptr = NULL;
-  }
-}
-
-void ReleaseMediaType(AM_MEDIA_TYPE* pMediaType)
-{
-  if (pMediaType->cbFormat)
-    CoTaskMemFree((void*)pMediaType->pbFormat);
-  SafeRelease(pMediaType->pUnk);
-  CoTaskMemFree(pMediaType);
-}
-
+#define CC_DSHOW
+#define CC_IMPLEMENTATION
+#include <camcap.hpp>
 
 //===-----------------------------------------------------------===//
 //===-----------------------------------------------------------===//
@@ -276,22 +186,6 @@ struct CaptureDeviceInfo
   VIDEO_STREAM_CONFIG_CAPS* caps;
   unsigned int capsCount;
 };
-
-//===-----------------------------------------------------------===//
-// User code should free the returned pointer
-//===-----------------------------------------------------------===//
-wchar_t* BSTR2WChar(BSTR bstr)
-{
-  if ( !bstr ) 
-    return NULL;  
-  _bstr_t _b(bstr);
-  const unsigned int l = _b.length();
-  if ( !l ) 
-    return NULL;
-  wchar_t* retstr = (wchar_t*)malloc(sizeof(wchar_t)*(l+1));
-  wcscpy_s(retstr, l+1, (const wchar_t*)_b);
-  return retstr;
-}
 
 //===-----------------------------------------------------------===//
 //===-----------------------------------------------------------===//
@@ -550,7 +444,36 @@ HRESULT SetSizeFormat(AM_MEDIA_TYPE* pMediaType, IAMStreamConfig* pStreamCfg, in
   return hr;
 }
 
+void test_camcap()
+{
+  camcap* cc = 0;
+  camcap_opts opts = { 0 };
+  opts.input_flags = CC_FLAG_VIDEOINPUT;
+  cc_init(&cc, &opts);
+  if (cc_idev_count(cc, CC_FLAG_VIDEOINPUT) > 0)
+  {
+    CAMCAPIDEV idev = cc_idev_get(cc, 0, CC_FLAG_VIDEOINPUT);
+    if (cc_idev_init(cc, idev) == CC_OK)
+    {
+      int modescount = cc_idev_modes(cc, idev, NULL, 0);
+      if (modescount > 0)
+      {
+        camcapidev_mode* modes = (camcapidev_mode*)calloc(modescount, sizeof(camcapidev_mode));
+        if (modes)
+        {
+          cc_idev_modes(cc, idev, modes, modescount);
+          for (int i = 0; i < modescount; ++i)
+          {
 
+          }
+          SafeFree(modes);
+        }
+      }
+    }
+    cc_idev_deinit(cc, idev);
+  }
+  cc_deinit(&cc);
+}
 //===-----------------------------------------------------------===//
 // https://msdn.microsoft.com/en-us/library/windows/desktop/dd377566(v=vs.85).aspx
 //===-----------------------------------------------------------===//
@@ -558,6 +481,13 @@ int main(int argc, const char** argv)
 {
   UNREFERENCED_PARAMETER(argc);
   UNREFERENCED_PARAMETER(argv);
+
+  test_camcap();
+  exit(0);
+
+
+
+
   HRESULT hr;
   // Initializing COM
   {
@@ -605,9 +535,7 @@ int main(int argc, const char** argv)
     hr = CoCreateInstance(CLSID_FilterGraph, 0, CLSCTX_INPROC_SERVER, IID_IGraphBuilder, (void**)&pGraphBuilder);
     CheckErrExit(hr, "Cannot create graph builder\n");
     hr = pCaptureGraph->SetFiltergraph(pGraphBuilder);
-    CheckErrExit(hr, "Cannot set filter graph\n");
-    hr = pGraphBuilder->QueryInterface(IID_IMediaControl, (void **)&pMediaControl);
-    CheckErrExit(hr, "Cannot create media control object\n");
+    CheckErrExit(hr, "Cannot set filter graph\n");    
     hr = deviceInfos[0].pMoniker->BindToObject(NULL, NULL, IID_IBaseFilter, (void**)&pVideoCaptureFilter);
     CheckErrExit(hr, "Cannot bind device to create capture filter object\n");
     hr = pGraphBuilder->AddFilter(pVideoCaptureFilter, deviceInfos[0].name);
@@ -679,6 +607,8 @@ int main(int argc, const char** argv)
     pMediaFilter->SetSyncSource(NULL);
     SafeRelease(pMediaFilter);
 
+    hr = pGraphBuilder->QueryInterface(IID_IMediaControl, (void **)&pMediaControl);
+    CheckErrExit(hr, "Cannot create media control object\n");
     hr = pMediaControl->Run();
     CheckErrExit(hr, "Cannot run the stream/start the graph\n");
 
@@ -705,7 +635,7 @@ int main(int argc, const char** argv)
     hr = pGrabber->GetCurrentBuffer(&bufferSize, (long *)pFrameBuffer);
     if (hr == S_OK) 
     {
-      if (bufferSize == pMediaType->lSampleSize)
+      if (bufferSize == (long)pMediaType->lSampleSize)
       {
         stbi_write_png("capture.png", deviceInfos[0].width, deviceInfos[0].height, 3, pFrameBuffer, deviceInfos[0].width*3);
       }
@@ -720,6 +650,9 @@ int main(int argc, const char** argv)
   SafeRelease(pMediaControl);
   SafeRelease(pGraphBuilder);
   SafeRelease(pCaptureGraph);
+
+  for (int i = 0; i < MAX_DEVICES; ++i)
+    deviceInfos[i].Release();
 
   // Deinitializing COM
   {
