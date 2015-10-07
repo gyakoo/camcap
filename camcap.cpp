@@ -449,33 +449,47 @@ void test_camcap()
   camcap* cc = 0;
   camcap_opts opts = { 0 };
   opts.input_flags = CC_FLAG_VIDEOINPUT;
+
+  // initializes lib
   cc_init(&cc, &opts);
-  if (cc_idev_count(cc, CC_FLAG_VIDEOINPUT) > 0)
+
+  // is there any video input?
+  if (cc_idev_count(cc) > 0)
   {
-    CAMCAPIDEV idev = cc_idev_get(cc, 0, CC_FLAG_VIDEOINPUT);
+    // we use the first available one
+    int idev = 0;
+
+    // initialize input device
     if (cc_idev_init(cc, idev) == CC_OK)
     {
+      // how many modes?
       int modescount = cc_idev_modes(cc, idev, NULL, 0);
       if (modescount > 0)
       {
+        // get the modes
         camcapidev_mode* modes = (camcapidev_mode*)calloc(modescount, sizeof(camcapidev_mode));
-        if (modes)
+        cc_idev_modes(cc, idev, modes, modescount);
+        
+        // look for first rgb24 mode
+        for (int i = 0; i < modescount; ++i)
         {
-          cc_idev_modes(cc, idev, modes, modescount);
-          for (int i = 0; i < modescount; ++i)
-          {
-
-          }
-          SafeFree(modes);
+          //printf("%d x %d x %d (%s)\n", modes[i].width, modes[i].height, modes[i].bitcount, cc_get_format_type_name(modes[i].video_format_type));
+          if (modes[i].video_format_type == CC_VIDEOFMT_RGB24)
+            if (cc_idev_set_mode(cc, idev, modes + i) == CC_OK)
+              break;
         }
+        SafeFree(modes);
       }
     }
+
+    // deinitializes input device
     cc_idev_deinit(cc, idev);
   }
+
+  // deinitializes lib
   cc_deinit(&cc);
 }
 //===-----------------------------------------------------------===//
-// https://msdn.microsoft.com/en-us/library/windows/desktop/dd377566(v=vs.85).aspx
 //===-----------------------------------------------------------===//
 int main(int argc, const char** argv)
 {

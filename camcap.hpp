@@ -23,6 +23,13 @@
 /*
 DOCUMENTATION
 
+// setting the media type of the grabber
+https://msdn.microsoft.com/en-us/library/dd407288(v=vs.85).aspx#set_the_media_type
+
+
+// general video input doc
+https://msdn.microsoft.com/en-us/library/windows/desktop/dd377566(v=vs.85).aspx
+
 */
 
 #ifndef _CC_H_
@@ -54,8 +61,20 @@ DOCUMENTATION
 #define CC_TRUE (1)
 #define CC_FALSE (0)
 #define CC_FLAG_VIDEOINPUT (1<<0)
-#define CC_FLAG_AUDIOINPUT (1<<1)
-#define CC_IDEV_INVALID (0xffffffff)
+
+// !!! Add more video format subtypes here and in functions like:
+// ccdshow_mediasubtype_to_formattype
+// cc_get_format_type_name
+#define CC_VIDEOFMT_UNKNOWN -1
+#define CC_VIDEOFMT_RGB24 0
+#define CC_VIDEOFMT_RGB32 1
+#define CC_VIDEOFMT_MJPEG 2    // motion jpeg
+#define CC_VIDEOFMT_YUV420P 3
+#define CC_VIDEOFMT_JPEG 4
+#define CC_VIDEOFMT_RGB565 5
+#define CC_VIDEOFMT_RGB555 6
+// <ADD HERE>
+#define CC_VIDEOFMT_MAX 7
 
 #ifdef __cplusplus
 extern "C" {
@@ -69,25 +88,28 @@ extern "C" {
     camcap_err_callabck errcb; // optional
   }camcap_opts;
 
-  typedef uint32_t CAMCAPIDEV;
   typedef struct camcapidev_mode
   {
-    int32_t width;
-    int32_t height;
     int64_t min_frame_interval;
     int64_t max_frame_interval;
-    int32_t min_bps;
-    int32_t max_bps;
+    int width;
+    int height;
+    int bitcount;
+    int video_format_type;
+    int min_bps;
+    int max_bps;
+    int reserved;
   }camcapidev_mode;
 
   int cc_init(camcap** cc, camcap_opts* opts);
   void cc_deinit(camcap** cc);
-  int cc_idev_count(camcap* cc, int itype);
-  CAMCAPIDEV cc_idev_get(camcap* cc, int index, int itype);
-  int cc_idev_init(camcap* cc, CAMCAPIDEV idev);
-  int cc_idev_deinit(camcap* cc, CAMCAPIDEV idev);
-  int cc_idev_is_initialized(camcap* cc, CAMCAPIDEV idev);
-  int cc_idev_modes(camcap* cc, CAMCAPIDEV idev, camcapidev_mode* modes, unsigned int max_modes);
+  int cc_idev_count(camcap* cc);
+  int cc_idev_init(camcap* cc, int idev);
+  int cc_idev_deinit(camcap* cc, int idev);
+  int cc_idev_is_initialized(camcap* cc, int idev);
+  int cc_idev_modes(camcap* cc, int idev, camcapidev_mode* modes, unsigned int max_modes);
+  int cc_idev_set_mode(camcap* cc, int idev, camcapidev_mode* mode);
+  const char* cc_get_format_type_name(int format_type);
 
 #ifdef __cplusplus
 };
@@ -137,6 +159,7 @@ extern "C" {
 #endif
 
 #define CC_BREAK_ALWAYS { __debugbreak(); }
+#define CC_MODENDX_MAGIC (0xabcd)
 
 // Common functions
 template<typename T>
@@ -179,7 +202,11 @@ wchar_t* BSTR2WChar(BSTR bstr)
 #pragma comment(lib, "uuid.lib")
 #pragma comment(lib, "strmiids.lib")
 #pragma comment(lib, "comsuppw.lib")
-#define CC_IDEV_EXTRACT(idev,typ,ndx) { typ=(idev>>16); ndx=(idev&0xffff); }
+
+// missing I420 from uuids.h
+// YUV420p
+// 30323449-0000-0010-8000-00AA00389B71  'i420' == MEDIASUBTYPE_I420
+const GUID MEDIASUBTYPE_I420 = { 0x30323449, 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71} };
 
 // Due to a missing qedit.h in recent Platform SDKs
 MIDL_INTERFACE("0579154A-2B53-4994-B0D0-E773148EFF85")
@@ -229,16 +256,25 @@ EXTERN_C const CLSID CLSID_SampleGrabber;
 EXTERN_C const IID IID_ISampleGrabber;
 EXTERN_C const CLSID CLSID_NullRenderer;
 
-void ReleaseMediaType(AM_MEDIA_TYPE* pMediaType)
+void ReleaseMediaType(AM_MEDIA_TYPE*& pMediaType)
 {
   if (pMediaType->cbFormat)
     CoTaskMemFree((void*)pMediaType->pbFormat);
   SafeRelease(pMediaType->pUnk);
   CoTaskMemFree(pMediaType);
+  pMediaType = NULL;
 }
 
 //===-----------------------------------------------------------===//
 //===-----------------------------------------------------------===//
+typedef struct dshowdevcap
+{
+  VIDEO_STREAM_CONFIG_CAPS cfgcaps;
+  AM_MEDIA_TYPE* pMediaType;
+  
+  VIDEOINFOHEADER* GetVIH(){ return (VIDEOINFOHEADER*)(pMediaType->pbFormat); }
+}dshowdevcap;
+
 typedef struct dshowdevinfo
 {
   dshowdevinfo()
@@ -267,6 +303,8 @@ typedef struct dshowdevinfo
 
   void ReleaseGraph()
   {
+    for (int i = 0; caps && i < capsCount; ++i)
+      ReleaseMediaType(caps[i].pMediaType);
     SafeFree(caps);
     capsCount = 0;
     SafeRelease(pStreamCfg);
@@ -280,7 +318,7 @@ typedef struct dshowdevinfo
   wchar_t*     devpath;
   unsigned int  waveInId;
   IMoniker* pMoniker;  
-  VIDEO_STREAM_CONFIG_CAPS* caps;
+  dshowdevcap* caps;  
   unsigned int capsCount;
 
   ICaptureGraphBuilder2* pCaptureGraph;
@@ -309,6 +347,8 @@ typedef struct camcap
 HRESULT ccdshow_extract_dev_info(camcap* cc, REFGUID category);
 HRESULT ccdshow_get_dev_caps(dshowdevinfo* devinfo);
 HRESULT ccdshow_route_crossbar(camcap* cc, ICaptureGraphBuilder2 **ppBuild, IBaseFilter **pVidInFilter, int conType, GUID captureMode);
+int ccdshow_mediasubtype_to_formattype(REFGUID subtype);
+dshowdevinfo* ccdshow_get_dev(camcap* cc, int idev);
 
 // //////////////////////////////////////////////////////////////////////////////////
 // //////////////////////////////////////////////////////////////////////////////////
@@ -328,7 +368,7 @@ int cc_init(camcap** _cc, camcap_opts* opts)
   hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
   cc_checkhr_ret(hr, CC_FAIL, "Cannot initialize COM");
   
-  // get dev info for video input category (todo: audio)
+  // get dev info for video input category
   hr = ccdshow_extract_dev_info(cc, CLSID_VideoInputDeviceCategory);
   cc_checkhr_ret(hr, CC_FAIL, "Cannot retrieve video input device info");
    
@@ -355,47 +395,24 @@ void cc_deinit(camcap** cc)
 
 // //////////////////////////////////////////////////////////////////////////////////
 // //////////////////////////////////////////////////////////////////////////////////
-int cc_idev_count(camcap* cc, int itype)
+int cc_idev_count(camcap* cc)
 {
-  int retval = 0;
-  switch (itype)
-  {
-  case CC_FLAG_VIDEOINPUT: retval = cc->devinfos_count; break;
-  }
-  return retval;
+  return cc->devinfos_count;
 }
 
 // //////////////////////////////////////////////////////////////////////////////////
 // //////////////////////////////////////////////////////////////////////////////////
-CAMCAPIDEV cc_idev_get(camcap* cc, int index, int itype)
-{
-  if (itype == CC_FLAG_AUDIOINPUT || (index < 0 || index >= cc->devinfos_count) )
-    return CC_IDEV_INVALID;
-  return (CAMCAPIDEV)( (itype<<16) | (index&0xffff));
-}
-
-// //////////////////////////////////////////////////////////////////////////////////
-// //////////////////////////////////////////////////////////////////////////////////
-int cc_idev_init(camcap* cc, CAMCAPIDEV idev)
+int cc_idev_init(camcap* cc, int idev)
 {
   // checking parameters
-  if (idev == CC_IDEV_INVALID)
-    cc_checkhr_ret(E_FAIL, CC_FAIL, "Idev invalid");
-
-  int itype, ndxdev; 
-  CC_IDEV_EXTRACT(idev, itype, ndxdev);
-
-  if (itype == CC_FLAG_AUDIOINPUT)
-    cc_checkhr_ret(E_FAIL, CC_FAIL, "Not supported audio input");
-
-  if (ndxdev >= cc->devinfos_count)
+  if (idev >= cc->devinfos_count)
     cc_checkhr_ret(E_FAIL, CC_FAIL, "Invalid video device index");
 
   if (cc_idev_is_initialized(cc, idev))
     cc_checkhr_ret(E_FAIL, CC_FAIL, "Device already initialized");
 
   // initializing objects
-  dshowdevinfo* devinfo = cc->devinfos+ndxdev;
+  dshowdevinfo* devinfo = cc->devinfos+ idev;
   HRESULT hr;
   hr = CoCreateInstance(CLSID_CaptureGraphBuilder2, NULL, CLSCTX_INPROC_SERVER, IID_ICaptureGraphBuilder2, (void **)&devinfo->pCaptureGraph);
   cc_checkhr_ret(hr, CC_FAIL, "Cannot create Capture Graph Builder");
@@ -441,72 +458,50 @@ int cc_idev_init(camcap* cc, CAMCAPIDEV idev)
 
 // //////////////////////////////////////////////////////////////////////////////////
 // //////////////////////////////////////////////////////////////////////////////////
-int cc_idev_deinit(camcap* cc, CAMCAPIDEV idev)
+dshowdevinfo* ccdshow_get_dev(camcap* cc, int idev)
 {
   // checking parameters
-  if (idev == CC_IDEV_INVALID)
-    cc_checkhr_ret(E_FAIL, CC_FAIL, "Idev invalid");
+  if (!cc || !cc->devinfos)
+    cc_checkhr_ret(E_FAIL, NULL, "Invalid pointer");
 
-  int itype, ndxdev;
-  CC_IDEV_EXTRACT(idev, itype, ndxdev);
-
-  if (itype == CC_FLAG_AUDIOINPUT)
-    cc_checkhr_ret(E_FAIL, CC_FAIL, "Not supported audio input");
-
-  if (ndxdev >= cc->devinfos_count)
-    cc_checkhr_ret(E_FAIL, CC_FAIL, "Invalid video device index");
+  if (idev >= cc->devinfos_count)
+    cc_checkhr_ret(E_FAIL, NULL, "Invalid video device index");
 
   if (!cc_idev_is_initialized(cc, idev))
-    cc_checkhr_ret(E_FAIL, CC_FAIL, "Device not initialized");
+    cc_checkhr_ret(E_FAIL, NULL, "Device not initialized");
 
-  dshowdevinfo* devinfo = cc->devinfos + ndxdev;
+  return cc->devinfos + idev;
+}
+
+// //////////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////////
+int cc_idev_deinit(camcap* cc, int idev)
+{
+  dshowdevinfo* devinfo = ccdshow_get_dev(cc, idev);
+  if (!devinfo) return CC_FAIL;
+
   devinfo->ReleaseGraph();
-
   return CC_OK;
 }
 
 // //////////////////////////////////////////////////////////////////////////////////
 // //////////////////////////////////////////////////////////////////////////////////
-int cc_idev_is_initialized(camcap* cc, CAMCAPIDEV idev)
+int cc_idev_is_initialized(camcap* cc, int idev)
 {
   // checking parameters
-  if (idev == CC_IDEV_INVALID)
-    cc_checkhr_ret(E_FAIL, CC_FAIL, "Idev invalid");
-
-  int itype, ndxdev;
-  CC_IDEV_EXTRACT(idev, itype, ndxdev);
-
-  if (itype == CC_FLAG_AUDIOINPUT)
-    cc_checkhr_ret(E_FAIL, CC_FAIL, "Not supported audio input");
-
-  if (ndxdev >= cc->devinfos_count)
+  if (idev >= cc->devinfos_count)
     cc_checkhr_ret(E_FAIL, CC_FAIL, "Invalid video device index");
 
-  dshowdevinfo* devinfo = cc->devinfos + ndxdev;
+  dshowdevinfo* devinfo = cc->devinfos + idev;
   return (devinfo->pCaptureGraph) ? CC_TRUE : CC_FALSE;
 }
 
 // //////////////////////////////////////////////////////////////////////////////////
 // //////////////////////////////////////////////////////////////////////////////////
-int cc_idev_modes(camcap* cc, CAMCAPIDEV idev, camcapidev_mode* modes, unsigned int max_modes)
+int cc_idev_modes(camcap* cc, int idev, camcapidev_mode* modes, unsigned int max_modes)
 {
-  // checking parameters
-  if (idev == CC_IDEV_INVALID)
-    cc_checkhr_ret(E_FAIL, CC_FAIL, "Idev invalid");
-
-  int itype, ndxdev;
-  CC_IDEV_EXTRACT(idev, itype, ndxdev);
-
-  if (itype == CC_FLAG_AUDIOINPUT)
-    cc_checkhr_ret(E_FAIL, CC_FAIL, "Not supported audio input");
-
-  if (ndxdev >= cc->devinfos_count)
-    cc_checkhr_ret(E_FAIL, CC_FAIL, "Invalid video device index");
-
-  if (!cc_idev_is_initialized(cc, idev))
-    cc_checkhr_ret(E_FAIL, CC_FAIL, "Device not initialized");
-  
-  dshowdevinfo* devinfo = cc->devinfos + ndxdev;
+  dshowdevinfo* devinfo = ccdshow_get_dev(cc, idev);
+  if (!devinfo) return CC_FAIL;
 
     // when no pointer passed, returns the actual count
   if (!modes)
@@ -520,13 +515,38 @@ int cc_idev_modes(camcap* cc, CAMCAPIDEV idev, camcapidev_mode* modes, unsigned 
   camcapidev_mode* curmode = modes;
   for (unsigned int i = 0; i < min_count; ++i, ++curmode)
   {
-    VIDEO_STREAM_CONFIG_CAPS* caps = devinfo->caps + i;
-    curmode->width = caps->InputSize.cx;
-    curmode->height= caps->InputSize.cy;
-    curmode->max_bps = caps->MaxBitsPerSecond;
-    curmode->min_bps = caps->MinBitsPerSecond;
-    curmode->max_frame_interval = caps->MaxFrameInterval;
-    curmode->min_frame_interval = caps->MinFrameInterval;
+    dshowdevcap* caps = devinfo->caps + i;
+    curmode->width = caps->cfgcaps.InputSize.cx;
+    curmode->height= caps->cfgcaps.InputSize.cy;
+    curmode->max_bps = caps->cfgcaps.MaxBitsPerSecond;
+    curmode->min_bps = caps->cfgcaps.MinBitsPerSecond;
+    curmode->max_frame_interval = caps->cfgcaps.MaxFrameInterval;
+    curmode->min_frame_interval = caps->cfgcaps.MinFrameInterval;
+    if (caps->pMediaType)
+    {
+      curmode->bitcount = caps->GetVIH()->bmiHeader.biBitCount;
+      curmode->video_format_type = ccdshow_mediasubtype_to_formattype(caps->pMediaType->subtype);
+    }
+    curmode->reserved = (int)MAKELONG(CC_MODENDX_MAGIC, (WORD)i); // pattern to indicate it's an index
+  }
+  return CC_OK;
+}
+
+// //////////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////////
+int cc_idev_set_mode(camcap* cc, int idev, camcapidev_mode* mode)
+{
+  dshowdevinfo* devinfo = ccdshow_get_dev(cc, idev);
+  if (!devinfo) return CC_FAIL;
+
+  // it's an user passed or one from our saved modes?
+  if (HIWORD(mode->reserved) == CC_MODENDX_MAGIC)
+  {
+    // saved
+  }
+  else
+  {
+    // user passed
   }
   return CC_OK;
 }
@@ -743,16 +763,15 @@ HRESULT ccdshow_get_dev_caps(dshowdevinfo* devinfo)
   if (SUCCEEDED(devinfo->pStreamCfg->GetNumberOfCapabilities(&capCount, &capSize)) && capSize == sizeof(VIDEO_STREAM_CONFIG_CAPS) && capCount > 0)
   {
     devinfo->capsCount = (unsigned int)capCount;
-    devinfo->caps = (VIDEO_STREAM_CONFIG_CAPS*)realloc(devinfo->caps, sizeof(VIDEO_STREAM_CONFIG_CAPS)*capCount);
-    VIDEO_STREAM_CONFIG_CAPS* vscc = devinfo->caps;
+    devinfo->caps = (dshowdevcap*)calloc(capCount, sizeof(dshowdevcap));
+    if (!devinfo->caps) return E_OUTOFMEMORY;
 
-    AM_MEDIA_TYPE *pmtCfg = NULL;
-    for (int iFormat = 0; iFormat < capCount; ++iFormat, ++vscc)
+    dshowdevcap* caps = devinfo->caps;    
+    for (int iFormat = 0; iFormat < capCount; ++iFormat, ++caps)
     {
-#error would be nice also to store info from pmtCfg like the format type, total size...
-      ZeroMemory(vscc, sizeof(VIDEO_STREAM_CONFIG_CAPS));
-      if (FAILED(devinfo->pStreamCfg->GetStreamCaps(iFormat, &pmtCfg, (BYTE*)vscc))) continue;
-      ReleaseMediaType(pmtCfg);
+      hr = devinfo->pStreamCfg->GetStreamCaps(iFormat, &caps->pMediaType, (BYTE*)&caps->cfgcaps);
+      if (SUCCEEDED(hr) && caps->pMediaType->majortype != MEDIATYPE_Video)
+        ReleaseMediaType(caps->pMediaType);
     }
   }
   else
@@ -762,9 +781,32 @@ HRESULT ccdshow_get_dev_caps(dshowdevinfo* devinfo)
   return hr;
 }
 
+// //////////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////////
+int ccdshow_mediasubtype_to_formattype(REFGUID subtype)
+{
+  if (subtype == MEDIASUBTYPE_RGB24)      return CC_VIDEOFMT_RGB24;
+  else if (subtype == MEDIASUBTYPE_RGB32) return CC_VIDEOFMT_RGB32;
+  else if (subtype == MEDIASUBTYPE_MJPG)  return CC_VIDEOFMT_MJPEG;
+  else if (subtype == MEDIASUBTYPE_IJPG)  return CC_VIDEOFMT_JPEG;
+  else if (subtype == MEDIASUBTYPE_I420)  return CC_VIDEOFMT_YUV420P;
+  else if (subtype == MEDIASUBTYPE_RGB565)return CC_VIDEOFMT_RGB565;
+  else if (subtype == MEDIASUBTYPE_RGB555)return CC_VIDEOFMT_RGB555;
+
+  return CC_VIDEOFMT_UNKNOWN;
+}
+
+
 #elif defined(CC_WMC) /*   WINDOWS MEDIA CAPTURE */
 
 #endif
+
+//* COMMON */
+const char* cc_get_format_type_name(int format_type)
+{
+  static const char* names[CC_VIDEOFMT_MAX] = { "RGB24", "RGB32", "MJPEG", "YUV420P", "JPEG", "RGB565", "RGB555" };
+  return format_type >= 0 && format_type < CC_VIDEOFMT_MAX ? names[format_type] : "UNKNOWN";
+}
 
 
 #endif // CC_IMPLEMENTATION
