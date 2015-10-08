@@ -1,6 +1,6 @@
 // The MIT License (MIT)
 // 
-// Copyright (c) 2015 Manu Marin / @gyakoo
+// Copyright (c) 2015 Manu Marin / gyakoo@gmail.com
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -20,15 +20,140 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+// PART OF THIS CODE IS BASED ON https://github.com/ofTheo/videoInput
+// videoInput by Theodore Watson theo.watson@gmail.com
+
 /*
 DOCUMENTATION
 
 // setting the media type of the grabber
 https://msdn.microsoft.com/en-us/library/dd407288(v=vs.85).aspx#set_the_media_type
 
-
 // general video input doc
 https://msdn.microsoft.com/en-us/library/windows/desktop/dd377566(v=vs.85).aspx
+
+// render stream use
+https://msdn.microsoft.com/en-us/library/aa930715.aspx (also samples)
+
+// using sample grabber
+https://msdn.microsoft.com/en-us/library/windows/desktop/dd407288(v=vs.85).aspx
+
+*/
+
+//===-----------------------------------------------------------===//
+//===-----------------------------------------------------------===//
+//class SampleGrabberCallback : public ISampleGrabberCB 
+//{
+//public:
+//  SampleGrabberCallback() 
+//  {
+//    InitializeCriticalSection(&critSection);
+//    freezeCheck = 0;
+//    bufferSetup = false;
+//    newFrame = false;
+//    latestBufferLength = 0;
+//    refcount = 1;
+//    hEvent = CreateEvent(NULL, true, false, NULL);
+//  }
+//
+//  ~SampleGrabberCallback() 
+//  {
+//    ptrBuffer = NULL;
+//    DeleteCriticalSection(&critSection);
+//    CloseHandle(hEvent);
+//    SafeFree(pixels);
+//  }
+//
+//  bool setupBuffer(int numBytesIn) 
+//  {
+//    if (bufferSetup) return false;
+//    numBytes = numBytesIn;
+//    pixels = (unsigned char*)malloc(numBytesIn);
+//    if (!pixels) return false;
+//    bufferSetup = true;
+//    newFrame = false;
+//    latestBufferLength = 0;
+//    return true;
+//  }
+//
+//  STDMETHODIMP_(ULONG) AddRef() 
+//  { 
+//    InterlockedIncrement(&refcount);
+//    return (ULONG)refcount;
+//  }
+//  STDMETHODIMP_(ULONG) Release() 
+//  { 
+//    InterlockedDecrement(&refcount);
+//    if ( !refcount )
+//      delete this;
+//    return (ULONG)refcount;
+//  }
+//  
+//  STDMETHODIMP QueryInterface(REFIID riid, void **ppvObject) 
+//  {
+//    UNREFERENCED_PARAMETER(riid);
+//    *ppvObject = static_cast<ISampleGrabberCB*>(this);
+//    return S_OK;
+//  }
+//
+//  //This method is meant to have less overhead
+//  STDMETHODIMP SampleCB(double Time, IMediaSample *pSample) 
+//  {
+//    UNREFERENCED_PARAMETER(Time);
+//    if (WaitForSingleObject(hEvent, 0) == WAIT_OBJECT_0) return S_OK;
+//
+//    HRESULT hr = pSample->GetPointer(&ptrBuffer);
+//    if (hr == S_OK) 
+//    {
+//      latestBufferLength = pSample->GetActualDataLength();
+//      if (latestBufferLength == numBytes) 
+//      {
+//        EnterCriticalSection(&critSection);
+//        memcpy(pixels, ptrBuffer, latestBufferLength);
+//        newFrame = true;
+//        freezeCheck = 1;
+//        LeaveCriticalSection(&critSection);
+//        SetEvent(hEvent);
+//      }
+//      else 
+//      {
+//        printf("ERROR: SampleCB() - buffer sizes do not match\n");
+//      }
+//    }
+//    return S_OK;
+//  }
+//
+//  //This method is meant to have more overhead
+//  STDMETHODIMP BufferCB(double Time, BYTE *pBuffer, long BufferLen) 
+//  {
+//    UNREFERENCED_PARAMETER(Time);
+//    UNREFERENCED_PARAMETER(pBuffer);
+//    UNREFERENCED_PARAMETER(BufferLen);
+//    return E_NOTIMPL;
+//  }
+//
+//  volatile unsigned long long refcount;
+//  int freezeCheck;
+//  int latestBufferLength;
+//  int numBytes;
+//  bool newFrame;
+//  bool bufferSetup;
+//  unsigned char * pixels;
+//  unsigned char * ptrBuffer;
+//  CRITICAL_SECTION critSection;
+//  HANDLE hEvent;
+//};
+
+
+/*
+// frame grabber.
+//pGrabberCB = new SampleGrabberCallback;
+//pGrabberCB->setupBuffer(pMediaType->lSampleSize);
+pFrameBuffer = (char*)malloc(pMediaType->lSampleSize);
+pGrabber->SetOneShot(TRUE); // for video, not photo
+pGrabber->SetBufferSamples(TRUE);
+//hr = pGrabber->SetCallback(pGrabberCB,0);
+//CheckErrExit(hr, "Cannot set callback for grabber\n");
 
 */
 
@@ -36,21 +161,25 @@ https://msdn.microsoft.com/en-us/library/windows/desktop/dd377566(v=vs.85).aspx
 #define _CC_H_
 
 #ifndef _MSC_VER
-#error CamCap Only compiles under Windows VisualStudio platform
+#   error CamCap Only compiles under Windows VisualStudio platform
 #endif
 #pragma warning(disable:4127)
 
 #if !defined(CC_DSHOW) && !defined(CC_WMC)
-#define CC_DSHOW
+#   define CC_DSHOW
 #endif
 
 #include <stdint.h>
 #ifdef CC_DSHOW
-#include <dshow.h>
-#include <uuids.h>
-#include <aviriff.h>
-#include <Windows.h>
-#include <comutil.h>
+#   include <dshow.h>
+#   define __IDxtCompositor_INTERFACE_DEFINED__
+#   define __IDxtAlphaSetter_INTERFACE_DEFINED__
+#   define __IDxtJpeg_INTERFACE_DEFINED__
+#   define __IDxtKey_INTERFACE_DEFINED__
+#   include <uuids.h>
+#   include <aviriff.h>
+#   include <Windows.h>
+#   include <comutil.h>
 #endif
 
 // /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -64,6 +193,7 @@ https://msdn.microsoft.com/en-us/library/windows/desktop/dd377566(v=vs.85).aspx
 
 // !!! Add more video format subtypes here and in functions like:
 // ccdshow_mediasubtype_to_formattype
+// ccdshow_formattype_to_mediasubtype
 // cc_get_format_type_name
 #define CC_VIDEOFMT_UNKNOWN -1
 #define CC_VIDEOFMT_RGB24 0
@@ -73,8 +203,7 @@ https://msdn.microsoft.com/en-us/library/windows/desktop/dd377566(v=vs.85).aspx
 #define CC_VIDEOFMT_JPEG 4
 #define CC_VIDEOFMT_RGB565 5
 #define CC_VIDEOFMT_RGB555 6
-// <ADD HERE>
-#define CC_VIDEOFMT_MAX 7
+#define CC_VIDEOFMT_MAX 7 // <- ADD HERE
 
 #ifdef __cplusplus
 extern "C" {
@@ -85,47 +214,72 @@ extern "C" {
   typedef struct camcap_opts
   {
     int32_t input_flags;
-    camcap_err_callabck errcb; // optional
+    camcap_err_callabck errcb; // optional to receive error codes and messages
   }camcap_opts;
 
   typedef struct camcapidev_mode
   {
-    int64_t min_frame_interval;
+    int64_t min_frame_interval;     // supported range of frame intervals
     int64_t max_frame_interval;
-    int width;
-    int height;
-    int bitcount;
-    int video_format_type;
-    int min_bps;
+    int width;                      // width of the image
+    int height;                     // height of the image
+    int bitcount;                   // no. of bits per pixel
+    int video_format_type;          // CC_VIDEOFMT_* 
+    int min_bps;                    // bits per second range 
     int max_bps;
-    int reserved;
+    int64_t avg_time_per_frame;     // in units of 100ns
+    int reserved;                   // not used
   }camcapidev_mode;
 
+    // Initializes the camcap library with options
   int cc_init(camcap** cc, camcap_opts* opts);
+
+    // Deinitialize camcap library
   void cc_deinit(camcap** cc);
+
+    // Returns number of input devices connected
   int cc_idev_count(camcap* cc);
+
+    // Initializes the input video device with index idev
   int cc_idev_init(camcap* cc, int idev);
+    
+    // Deinitializes the input video device with index idev
   int cc_idev_deinit(camcap* cc, int idev);
+
+    // Returns 0 if the input video device idev isn't initialized, or 1 if it is
   int cc_idev_is_initialized(camcap* cc, int idev);
+
+    // Copies up to max_modes into the array modes, with supported input video device modes
+    // To return the number of available modes for the idev, pass modes as NULL
   int cc_idev_modes(camcap* cc, int idev, camcapidev_mode* modes, unsigned int max_modes);
+
+    // Get information about the current set mode.
+  int cc_idev_get_current_mode(camcap* cc, int idev, camcapidev_mode* out_mode);
+
+    // Set the mode to the input video device.
   int cc_idev_set_mode(camcap* cc, int idev, camcapidev_mode* mode);
+
+    // Start capturing the input video device idev
+  int cc_idev_start(camcap* cc, int idev);
+
+    // Pause capturing
+  int cc_idev_pause(camcap* cc, int idev);
+
+    // Stop capturing
+  int cc_idev_stop(camcap* cc, int idev);
+
+    // Retrieves the frame from the running input video device (synchronous mode)
+  int cc_idev_grab(camcap* cc, int idev, int timeout_ms);
+
+    // Returns the last grabbed frame buffer, buffer size depends on the current set mode 
+  void* cc_idev_get_buffer(camcap* cc, int idev);
+
+    // Gets the name of the given video format type (CC_VIDEOFMT_*)
   const char* cc_get_format_type_name(int format_type);
 
 #ifdef __cplusplus
 };
 #endif
-/*
-- init
-- list capture devices
-- pick one
-- list device capabilities (sizes/formats)
-- start device (size/format, loop/callback)
-- grab buffer directly or through callback
-- stop device
-- deinit
-
-*/
-
 
 #ifdef CC_IMPLEMENTATION
 #if defined(__x86_64__) || defined(_M_X64)  ||  defined(__aarch64__)   || defined(__64BIT__) || \
@@ -144,6 +298,8 @@ extern "C" {
 # define CC_BREAK {(void*)0;}
 # define CC_ASSERT(c)
 #endif
+#define CC_BREAK_ALWAYS { __debugbreak(); }
+#define CC_ASSERT_ALWAYS(c) { if (!(c)) { CC_BREAK_ALWAYS;} }
 
 #ifndef cc_malloc
 # define cc_malloc(sz) malloc(sz)
@@ -158,7 +314,6 @@ extern "C" {
 # define cc_realloc(p,sz) realloc(p,sz)
 #endif
 
-#define CC_BREAK_ALWAYS { __debugbreak(); }
 #define CC_MODENDX_MAGIC (0xabcd)
 
 // Common functions
@@ -197,18 +352,27 @@ wchar_t* BSTR2WChar(BSTR bstr)
   wcscpy_s(retstr, l + 1, (const wchar_t*)_b);
   return retstr;
 }
-
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////DIRECT SHOW IMPLEMENTATION/////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #ifdef CC_DSHOW  /*    DIRECT SHOW      */
 #pragma comment(lib, "uuid.lib")
 #pragma comment(lib, "strmiids.lib")
 #pragma comment(lib, "comsuppw.lib")
+
 
 // missing I420 from uuids.h
 // YUV420p
 // 30323449-0000-0010-8000-00AA00389B71  'i420' == MEDIASUBTYPE_I420
 const GUID MEDIASUBTYPE_I420 = { 0x30323449, 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71} };
 
+// //////////////////////////////////////////////////////////////////////////////////
 // Due to a missing qedit.h in recent Platform SDKs
+// //////////////////////////////////////////////////////////////////////////////////
 MIDL_INTERFACE("0579154A-2B53-4994-B0D0-E773148EFF85")
 ISampleGrabberCB : public IUnknown
 {
@@ -224,6 +388,8 @@ public:
 
 };
 
+// //////////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////////
 MIDL_INTERFACE("6B652FFF-11FE-4fce-92AD-0266B5D7C78F")
 ISampleGrabber : public IUnknown
 {
@@ -256,8 +422,11 @@ EXTERN_C const CLSID CLSID_SampleGrabber;
 EXTERN_C const IID IID_ISampleGrabber;
 EXTERN_C const CLSID CLSID_NullRenderer;
 
+// //////////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////////
 void ReleaseMediaType(AM_MEDIA_TYPE*& pMediaType)
 {
+  if (!pMediaType) return;
   if (pMediaType->cbFormat)
     CoTaskMemFree((void*)pMediaType->pbFormat);
   SafeRelease(pMediaType->pUnk);
@@ -265,23 +434,26 @@ void ReleaseMediaType(AM_MEDIA_TYPE*& pMediaType)
   pMediaType = NULL;
 }
 
-//===-----------------------------------------------------------===//
-//===-----------------------------------------------------------===//
+// //////////////////////////////////////////////////////////////////////////////////
+// capabilities of an input video device in Directshow
+// //////////////////////////////////////////////////////////////////////////////////
 typedef struct dshowdevcap
 {
   VIDEO_STREAM_CONFIG_CAPS cfgcaps;
   AM_MEDIA_TYPE* pMediaType;
-  
-  VIDEOINFOHEADER* GetVIH(){ return (VIDEOINFOHEADER*)(pMediaType->pbFormat); }
 }dshowdevcap;
 
+// //////////////////////////////////////////////////////////////////////////////////
+// information and objects of an input video device in DirectShow
+// //////////////////////////////////////////////////////////////////////////////////
 typedef struct dshowdevinfo
 {
   dshowdevinfo()
     : name(NULL), desc(NULL), devpath(NULL), waveInId(0)
     , pMoniker(NULL), caps(NULL), capsCount(0)
     , pCaptureGraph(NULL), pGraphBuilder(NULL), pVideoCaptureFilter(NULL)
-    , pStreamCfg(NULL)
+    , pStreamCfg(NULL), pGrabberFilter(NULL), pGrabber(NULL), pNullRenderFilter(NULL)
+    , pCurMediaType(NULL), pMediaControl(NULL), pFrameBuffer(NULL)
   {
   }
 
@@ -292,21 +464,29 @@ typedef struct dshowdevinfo
 
   void Release()
   {
+    // base info for device
     SafeFree(name);
     SafeFree(desc);
     SafeFree(devpath);
     waveInId = 0;
     SafeRelease(pMoniker);        
 
+    // graph builder info for device
     ReleaseGraph();
   }
 
   void ReleaseGraph()
   {
-    for (int i = 0; caps && i < capsCount; ++i)
+    SafeFree(pFrameBuffer);
+    for (unsigned int i = 0; caps && i < capsCount; ++i)
       ReleaseMediaType(caps[i].pMediaType);
     SafeFree(caps);
     capsCount = 0;
+    SafeRelease(pMediaControl);
+    ReleaseMediaType(pCurMediaType);
+    SafeRelease(pNullRenderFilter);
+    SafeRelease(pGrabber);
+    SafeRelease(pGrabberFilter);
     SafeRelease(pStreamCfg);
     SafeRelease(pVideoCaptureFilter);
     SafeRelease(pGraphBuilder);
@@ -318,22 +498,36 @@ typedef struct dshowdevinfo
   wchar_t*     devpath;
   unsigned int  waveInId;
   IMoniker* pMoniker;  
-  dshowdevcap* caps;  
+  dshowdevcap* caps;
   unsigned int capsCount;
 
   ICaptureGraphBuilder2* pCaptureGraph;
   IGraphBuilder* pGraphBuilder;
   IBaseFilter* pVideoCaptureFilter;
   IAMStreamConfig* pStreamCfg;
-
+  IBaseFilter* pGrabberFilter;
+  ISampleGrabber* pGrabber;
+  IBaseFilter* pNullRenderFilter;
+  AM_MEDIA_TYPE* pCurMediaType;
+  IMediaControl* pMediaControl;
+  unsigned char* pFrameBuffer;
 }dshowdevinfo;
 
+// //////////////////////////////////////////////////////////////////////////////////
+// camcap structure in DirectShow implementation
+// //////////////////////////////////////////////////////////////////////////////////
 typedef struct camcap
 {
   dshowdevinfo* devinfos;
   int devinfos_count;
   camcap_opts opts;
 }cc;
+
+
+// //////////////////////////////////////////////////////////////////////////////////
+// direct show specific helpers
+// //////////////////////////////////////////////////////////////////////////////////
+#define CC_VIH(pmt) ( (VIDEOINFOHEADER*)(pmt->pbFormat) )
 
 #define cc_checkhr(hr,msg) \
   { if ( FAILED(hr) ) { if ( cc->opts.errcb ) cc->opts.errcb((int)hr,msg); } }
@@ -348,7 +542,10 @@ HRESULT ccdshow_extract_dev_info(camcap* cc, REFGUID category);
 HRESULT ccdshow_get_dev_caps(dshowdevinfo* devinfo);
 HRESULT ccdshow_route_crossbar(camcap* cc, ICaptureGraphBuilder2 **ppBuild, IBaseFilter **pVidInFilter, int conType, GUID captureMode);
 int ccdshow_mediasubtype_to_formattype(REFGUID subtype);
+void ccdshow_formattype_to_mediasubtype(int format_type, GUID* out_subtype);
 dshowdevinfo* ccdshow_get_dev(camcap* cc, int idev);
+HRESULT ccdshow_set_framebuffer_size(dshowdevinfo* devinfo, AM_MEDIA_TYPE* pMediaType);
+HRESULT ccdshow_wait_graph_state(dshowdevinfo* devinfo, OAFilterState desired_st, int timeout_ms);
 
 // //////////////////////////////////////////////////////////////////////////////////
 // //////////////////////////////////////////////////////////////////////////////////
@@ -411,21 +608,19 @@ int cc_idev_init(camcap* cc, int idev)
   if (cc_idev_is_initialized(cc, idev))
     cc_checkhr_ret(E_FAIL, CC_FAIL, "Device already initialized");
 
-  // initializing objects
+  // initializing base graph objects
   dshowdevinfo* devinfo = cc->devinfos+ idev;
   HRESULT hr;
   hr = CoCreateInstance(CLSID_CaptureGraphBuilder2, NULL, CLSCTX_INPROC_SERVER, IID_ICaptureGraphBuilder2, (void **)&devinfo->pCaptureGraph);
   cc_checkhr_ret(hr, CC_FAIL, "Cannot create Capture Graph Builder");
-
   hr = CoCreateInstance(CLSID_FilterGraph, 0, CLSCTX_INPROC_SERVER, IID_IGraphBuilder, (void**)&devinfo->pGraphBuilder);
   cc_checkhr_ret(hr, CC_FAIL, "Cannot create Filter Graph");
-
   hr = devinfo->pCaptureGraph->SetFiltergraph(devinfo->pGraphBuilder);
   cc_checkhr_ret(hr, CC_FAIL, "Cannot set filter graph");
 
+  // initialize and add base video capture filter
   hr = devinfo->pMoniker->BindToObject(NULL, NULL, IID_IBaseFilter, (void**)&devinfo->pVideoCaptureFilter);
-  cc_checkhr_ret(hr, CC_FAIL, "Cannot bind device to create capture filter object");
-  
+  cc_checkhr_ret(hr, CC_FAIL, "Cannot bind device to create capture filter object");  
   hr = devinfo->pGraphBuilder->AddFilter(devinfo->pVideoCaptureFilter, devinfo->name);
   cc_checkhr_ret(hr, CC_FAIL, "Cannot add capture base filter to graph builder");
 
@@ -439,7 +634,6 @@ int cc_idev_init(camcap* cc, int idev)
     if (SUCCEEDED(hr))
       break;
   }
-
   if (iCapMode == CAPMODES_MAX)
     cc_checkhr_ret(E_FAIL, CC_FAIL, "Cannot initialize the stream for preview or capture");
 
@@ -449,10 +643,58 @@ int cc_idev_init(camcap* cc, int idev)
   if (FAILED(hr) && cc->opts.errcb)
     cc->opts.errcb(hr, "Canot route crossbar");
 
-  // getting caps
+  // getting caps and default media type
   hr = ccdshow_get_dev_caps(devinfo);
   cc_checkhr_ret(hr, CC_FAIL, "Cannot retrieve device caps");
-  
+  hr = devinfo->pStreamCfg->GetFormat(&devinfo->pCurMediaType);
+  cc_checkhr_ret(hr, CC_FAIL, "Cannot retrieve device default media type");
+  hr = ccdshow_set_framebuffer_size(devinfo, devinfo->pCurMediaType);
+  cc_checkhr_ret(hr, CC_FAIL, "Cannot initialize frame buffer with default media type");
+
+  // grabber filter and interface
+  hr = CoCreateInstance(CLSID_SampleGrabber, NULL, CLSCTX_INPROC_SERVER, IID_IBaseFilter, (void**)&devinfo->pGrabberFilter);
+  cc_checkhr_ret(hr, CC_FAIL, "Cannot create frame grabber filter");
+  hr = devinfo->pGraphBuilder->AddFilter(devinfo->pGrabberFilter, L"Sample Grabber");
+  cc_checkhr_ret(hr, CC_FAIL, "Cannot add grabber filter to graph");
+  hr = devinfo->pGrabberFilter->QueryInterface(IID_ISampleGrabber, (void**)&devinfo->pGrabber);
+  cc_checkhr_ret(hr, CC_FAIL, "Cannot create/query grabber object");
+  hr = devinfo->pGrabber->SetOneShot(TRUE);
+  cc_checkhr_ret(hr, CC_FAIL, "Cannot set one show");
+  hr = devinfo->pGrabber->SetBufferSamples(TRUE);
+  cc_checkhr_ret(hr, CC_FAIL, "Cannot buffer samples");
+
+  // sets the default media type to the grabber filter (it needs one)
+  // it uses a temp struct initialized with pCurMediaType, b/c devinfo->pCurMediaType does not work directly
+  AM_MEDIA_TYPE defMt = { 0 };
+  defMt.majortype = devinfo->pCurMediaType->majortype;
+  defMt.subtype = devinfo->pCurMediaType->subtype;
+  defMt.formattype = devinfo->pCurMediaType->formattype;
+  hr = devinfo->pGrabber->SetMediaType(&defMt);
+  cc_checkhr_ret(hr, CC_FAIL, "Cannot set default media type to grabber filter");
+
+  // null renderer filter because we need to specify a destination filter
+  hr = CoCreateInstance(CLSID_NullRenderer, NULL, CLSCTX_INPROC_SERVER, IID_IBaseFilter, (void**)&devinfo->pNullRenderFilter);
+  cc_checkhr_ret(hr, CC_FAIL, "Cannot create Null Renderer Filter");
+  hr = devinfo->pGraphBuilder->AddFilter(devinfo->pNullRenderFilter, L"NullRenderer");
+  cc_checkhr_ret(hr, CC_FAIL, "Cannot add Null Renderer Filter to graph");
+
+  // Connects an output pin on a source filter to a sink filter, optionally through an intermediate filter.
+  hr = devinfo->pCaptureGraph->RenderStream(&PIN_CATEGORY_PREVIEW, &MEDIATYPE_Video, devinfo->pVideoCaptureFilter, devinfo->pGrabberFilter, devinfo->pNullRenderFilter);
+  cc_checkhr_ret(hr, CC_FAIL, "Cannot connect the Preview PIN (RenderStream)");
+
+  // sets Sync Source of all filters to NULL. Not to syncing the filters will make them run as quickly as possible
+  IMediaFilter *pMediaFilter = NULL;
+  hr = devinfo->pGraphBuilder->QueryInterface(IID_IMediaFilter, (void**)&pMediaFilter);
+  if (SUCCEEDED(hr))
+  {
+    pMediaFilter->SetSyncSource(NULL);
+    SafeRelease(pMediaFilter);
+  }
+
+  // creates the media control interface
+  hr = devinfo->pGraphBuilder->QueryInterface(IID_IMediaControl, (void **)&devinfo->pMediaControl);
+  cc_checkhr_ret(hr, CC_FAIL, "Cannot create media control object");
+
   return CC_OK;
 }
 
@@ -524,11 +766,35 @@ int cc_idev_modes(camcap* cc, int idev, camcapidev_mode* modes, unsigned int max
     curmode->min_frame_interval = caps->cfgcaps.MinFrameInterval;
     if (caps->pMediaType)
     {
-      curmode->bitcount = caps->GetVIH()->bmiHeader.biBitCount;
+      curmode->bitcount = CC_VIH(caps->pMediaType)->bmiHeader.biBitCount;
+      curmode->avg_time_per_frame = CC_VIH(caps->pMediaType)->AvgTimePerFrame;
       curmode->video_format_type = ccdshow_mediasubtype_to_formattype(caps->pMediaType->subtype);
     }
     curmode->reserved = (int)MAKELONG(CC_MODENDX_MAGIC, (WORD)i); // pattern to indicate it's an index
   }
+  return CC_OK;
+}
+
+// //////////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////////
+int cc_idev_get_current_mode(camcap* cc, int idev, camcapidev_mode* out_mode)
+{
+  if (!cc || idev < 0 || !out_mode) return CC_FAIL;
+  dshowdevinfo* devinfo = ccdshow_get_dev(cc, idev);
+  if (!devinfo) return CC_FAIL;
+  VIDEOINFOHEADER* vih = CC_VIH(devinfo->pCurMediaType);
+  if (!vih) return CC_FAIL;
+
+  out_mode->width = vih->bmiHeader.biWidth;
+  out_mode->height = vih->bmiHeader.biHeight;
+  out_mode->max_bps = 0;
+  out_mode->min_bps = 0;
+  out_mode->max_frame_interval = 0;
+  out_mode->min_frame_interval = 0;
+  out_mode->bitcount = vih->bmiHeader.biBitCount;
+  out_mode->avg_time_per_frame = vih->AvgTimePerFrame;
+  out_mode->video_format_type = ccdshow_mediasubtype_to_formattype(devinfo->pCurMediaType->subtype);
+  out_mode->reserved = 0;
   return CC_OK;
 }
 
@@ -539,17 +805,168 @@ int cc_idev_set_mode(camcap* cc, int idev, camcapidev_mode* mode)
   dshowdevinfo* devinfo = ccdshow_get_dev(cc, idev);
   if (!devinfo) return CC_FAIL;
 
-  // it's an user passed or one from our saved modes?
-  if (HIWORD(mode->reserved) == CC_MODENDX_MAGIC)
+  // saved current format
+  AM_MEDIA_TYPE saved_mt = { 0 };
+  //VIDEOINFOHEADER saved_vih = { 0 };
+
+  saved_mt = *devinfo->pCurMediaType;
+  // setting desired info
+  VIDEOINFOHEADER* vih = CC_VIH(devinfo->pCurMediaType);
+  if (!vih) return CC_FAIL;
+  //saved_vih = *vih;
+
+  vih->AvgTimePerFrame = mode->avg_time_per_frame;
+  vih->bmiHeader.biWidth = mode->width;
+  vih->bmiHeader.biHeight = mode->height;
+  ccdshow_formattype_to_mediasubtype(mode->video_format_type, &devinfo->pCurMediaType->subtype);
+  devinfo->pCurMediaType->lSampleSize = mode->width * mode->height * mode->bitcount;
+  devinfo->pCurMediaType->lSampleSize >>= 3; // don't like this, because even when the bitcount might be 12, the stride for pixel might be 2 bytes not 1'5
+  vih->bmiHeader.biSizeImage = devinfo->pCurMediaType->lSampleSize;
+
+  // try to set the format
+  int retval = CC_OK;
+  HRESULT hr = devinfo->pStreamCfg->SetFormat(devinfo->pCurMediaType);
+  int set_fb_size = CC_FALSE;
+  if (hr == S_OK)
   {
-    // saved
+    hr = ccdshow_set_framebuffer_size(devinfo, devinfo->pCurMediaType);
+    if (hr == S_OK)
+    {
+      AM_MEDIA_TYPE defMt = { 0 };
+      defMt.majortype = devinfo->pCurMediaType->majortype;
+      defMt.subtype = devinfo->pCurMediaType->subtype;
+      defMt.formattype = devinfo->pCurMediaType->formattype;
+      defMt.lSampleSize = devinfo->pCurMediaType->lSampleSize;
+      hr = devinfo->pGrabber->SetMediaType(&defMt);
+      if (hr != S_OK)
+        set_fb_size = CC_TRUE;
+    }
+    else
+    {
+      set_fb_size = CC_TRUE; // could set the format OK, but couldn't allocate frame in memory
+    }
   }
-  else
+    
+  if (hr!=S_OK)
   {
-    // user passed
+    // failed. restore saved format info
+    *devinfo->pCurMediaType = saved_mt;
+
+    // reallocate frame in memory for the old format only if it changed format but couldn't allocate for new format
+    if ( set_fb_size )
+      ccdshow_set_framebuffer_size(devinfo, devinfo->pCurMediaType);
+    retval = CC_FAIL;
+  }
+  return retval;
+}
+
+// //////////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////////
+int cc_idev_start(camcap* cc, int idev)
+{
+  dshowdevinfo* devinfo = ccdshow_get_dev(cc, idev);
+  if (!devinfo) return CC_FAIL;
+
+  OAFilterState state;
+  if (devinfo->pMediaControl->GetState(100, &state) != S_OK)
+    return CC_FAIL;
+
+  if (state != State_Running)
+  {
+    HRESULT hr = devinfo->pMediaControl->Run();    
+    if (hr == S_FALSE)
+    {
+      hr = ccdshow_wait_graph_state(devinfo, State_Running, 500);
+      if (FAILED(hr))
+        return CC_FAIL;
+    }
+  }
+
+  return CC_OK;
+}
+
+// //////////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////////
+int cc_idev_grab(camcap* cc, int idev, int timeout_ms)
+{
+  dshowdevinfo* devinfo = ccdshow_get_dev(cc, idev);
+  if (!devinfo) return CC_FAIL;
+
+  // is running?
+  OAFilterState state;
+  if (devinfo->pMediaControl->GetState(100, &state) != S_OK || state != State_Running )
+    return CC_FAIL;
+
+  // get curren buffer and size
+  HRESULT hr = S_FALSE;
+  const long buffersize = CC_VIH(devinfo->pCurMediaType)->bmiHeader.biSizeImage;
+  long resbuffsize = buffersize;
+  while (hr != S_OK && timeout_ms >= 0)
+  {
+    hr = devinfo->pGrabber->GetCurrentBuffer(&resbuffsize, (long*)devinfo->pFrameBuffer);
+    
+    // it returns ok, but the buffer wasn't filled with all expected bytes, then loop
+    if (hr == S_OK && buffersize != resbuffsize)
+    {
+      hr = S_FALSE;
+      resbuffsize = buffersize;
+    }
+
+    // if it's not ok, sleep and make a loop until timeout
+    if (hr != S_OK ) 
+    {
+      Sleep(10);
+      timeout_ms -= 10;
+    }
+  }
+  if (hr != S_OK)
+    return CC_FAIL;
+  return CC_OK;
+}
+
+// //////////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////////
+void* cc_idev_get_buffer(camcap* cc, int idev)
+{
+  dshowdevinfo* devinfo = ccdshow_get_dev(cc, idev);
+  return devinfo ? devinfo->pFrameBuffer : NULL;
+}
+
+// //////////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////////
+int cc_idev_pause(camcap* cc, int idev)
+{
+  dshowdevinfo* devinfo = ccdshow_get_dev(cc, idev);
+  if (!devinfo) return CC_FAIL;
+  
+  HRESULT hr = devinfo->pMediaControl->Pause();
+  if (hr != S_OK)
+  {
+    hr = ccdshow_wait_graph_state(devinfo, State_Paused, 500);
+    if ( FAILED(hr) )
+      return CC_FAIL;
+  }
+
+  return CC_OK;
+}
+
+// //////////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////////
+int cc_idev_stop(camcap* cc, int idev)
+{
+  dshowdevinfo* devinfo = ccdshow_get_dev(cc, idev);
+  if (!devinfo) return CC_FAIL;
+
+  HRESULT hr = devinfo->pMediaControl->Stop();
+  if (hr != S_OK)
+  {
+    hr = ccdshow_wait_graph_state(devinfo, State_Stopped, 500);
+    if (FAILED(hr))
+      return CC_FAIL;
   }
   return CC_OK;
 }
+
 
 // //////////////////////////////////////////////////////////////////////////////////
 // //////////////////////////////////////////////////////////////////////////////////
@@ -646,6 +1063,7 @@ HRESULT ccdshow_extract_dev_info(camcap* cc, REFGUID category)
 
 // //////////////////////////////////////////////////////////////////////////////////
 // Borrowed from VideoInput
+// https://github.com/ofTheo/videoInput/blob/master/videoInputSrcAndDemos/libs/videoInput/videoInput.cpp
 // //////////////////////////////////////////////////////////////////////////////////
 HRESULT ccdshow_route_crossbar(camcap* cc, ICaptureGraphBuilder2 **ppBuild, IBaseFilter **pVidInFilter, int conType, GUID captureMode)
 {
@@ -796,6 +1214,71 @@ int ccdshow_mediasubtype_to_formattype(REFGUID subtype)
   return CC_VIDEOFMT_UNKNOWN;
 }
 
+// //////////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////////
+void ccdshow_formattype_to_mediasubtype(int format_type, GUID* out_subtype)
+{
+  switch (format_type)
+  {
+  case CC_VIDEOFMT_RGB24: *out_subtype = MEDIASUBTYPE_RGB24; break;
+  case CC_VIDEOFMT_RGB32: *out_subtype = MEDIASUBTYPE_RGB32; break;
+  case CC_VIDEOFMT_MJPEG: *out_subtype = MEDIASUBTYPE_MJPG; break;
+  case CC_VIDEOFMT_JPEG:  *out_subtype = MEDIASUBTYPE_IJPG; break;
+  case CC_VIDEOFMT_YUV420P:*out_subtype = MEDIASUBTYPE_I420; break;
+  case CC_VIDEOFMT_RGB565:*out_subtype = MEDIASUBTYPE_RGB565; break;
+  case CC_VIDEOFMT_RGB555:*out_subtype = MEDIASUBTYPE_RGB555; break;
+  default: *out_subtype = MEDIASUBTYPE_RGB24;
+  }
+}
+
+// //////////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////////
+HRESULT ccdshow_set_framebuffer_size(dshowdevinfo* devinfo, AM_MEDIA_TYPE* pMediaType)
+{
+  if (!devinfo || !pMediaType || pMediaType->majortype != MEDIATYPE_Video) 
+    return E_FAIL;
+
+  VIDEOINFOHEADER* vih = CC_VIH(pMediaType);
+  if (!vih) return E_FAIL;
+
+  unsigned int size_image = vih->bmiHeader.biSizeImage;
+  if (!size_image)
+  {
+    // don't like this, because even when the bitcount might be 12, the stride for pixel might be 2 bytes not 1'5
+    size_image = vih->bmiHeader.biWidth * vih->bmiHeader.biHeight * vih->bmiHeader.biBitCount;
+    size_image >>= 3;
+  }
+
+  
+  if (!size_image)
+    return E_FAIL;
+
+  devinfo->pFrameBuffer = (unsigned char*)cc_realloc(devinfo->pFrameBuffer, size_image);
+  if (!devinfo->pFrameBuffer)
+    return E_OUTOFMEMORY;
+  return S_OK;
+}
+
+// //////////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////////
+HRESULT ccdshow_wait_graph_state(dshowdevinfo* devinfo, OAFilterState desired_st, int timeout_ms)
+{
+  OAFilterState fs = -1;
+  while (timeout_ms > 0 && fs != desired_st)
+  {
+    devinfo->pMediaControl->GetState(10, &fs);
+    timeout_ms -= 10;
+  }
+  return fs == desired_st ? S_OK : E_FAIL;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////WINDOWS MEDIA CAPTURE IMPLEMENTATION///////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #elif defined(CC_WMC) /*   WINDOWS MEDIA CAPTURE */
 
