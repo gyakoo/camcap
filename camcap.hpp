@@ -24,19 +24,22 @@
 // videoInput by Theodore Watson theo.watson@gmail.com
 
 /*
-DOCUMENTATION
+DOCUMENTATION - DIRECT SHOW
 
 // setting the media type of the grabber
 https://msdn.microsoft.com/en-us/library/dd407288(v=vs.85).aspx#set_the_media_type
-
 // general video input doc
 https://msdn.microsoft.com/en-us/library/windows/desktop/dd377566(v=vs.85).aspx
-
 // render stream use
 https://msdn.microsoft.com/en-us/library/aa930715.aspx (also samples)
-
 // using sample grabber
 https://msdn.microsoft.com/en-us/library/windows/desktop/dd407288(v=vs.85).aspx
+
+
+DOCUMENTATION - WINDOWS MEDIA FOUNDATION (WIN VISTA AND 7)
+
+https://msdn.microsoft.com/en-us/library/windows/desktop/bb970511(v=vs.85).aspx
+
 
 */
 

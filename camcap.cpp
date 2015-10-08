@@ -1,6 +1,6 @@
 // The MIT License (MIT)
 // 
-// Copyright (c) 2015 Manu Marin / @gyakoo
+// Copyright (c) 2015 Manu Marin / gyakoo@gmail.com
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -158,6 +158,80 @@ void test_camcap2()
   cc_deinit(&cc);
 }
 
+// -----------------------------------------------------------------
+// Enumerate all objects in this category, printing the name
+// -----------------------------------------------------------------
+void enum_cat(REFGUID cat)
+{
+  HRESULT hr;
+  ICreateDevEnum *pSysDevEnum = NULL;
+  IEnumMoniker *pEnum = NULL;
+  IMoniker *pMoniker = NULL;
+  VARIANT var;
+
+  hr = CoCreateInstance(CLSID_SystemDeviceEnum, NULL, CLSCTX_INPROC_SERVER,
+    IID_ICreateDevEnum, (void**)&pSysDevEnum);
+  if (FAILED(hr))
+    return;
+
+  hr = pSysDevEnum->CreateClassEnumerator(cat, &pEnum, 0);
+  if (hr == S_OK && pEnum)
+  {
+    while (S_OK == pEnum->Next(1, &pMoniker, NULL))
+    {
+      if (!pMoniker) continue;
+      IPropertyBag *pPropBag = NULL;
+      pMoniker->BindToStorage(0, 0, IID_IPropertyBag, (void **)&pPropBag);
+      if (!pPropBag) continue;
+      VariantInit(&var);
+      hr = pPropBag->Read(L"FriendlyName", &var, 0);
+      if (SUCCEEDED(hr))
+        printf("\t%S\n", var.bstrVal);
+      VariantClear(&var);
+      if (pPropBag) pPropBag->Release();
+      if (pMoniker) pMoniker->Release();
+    }
+  }
+  if (pSysDevEnum) pSysDevEnum->Release();
+  if (pEnum) pEnum->Release();
+}
+
+// -----------------------------------------------------------------
+// Enumerate all categories in the array
+// -----------------------------------------------------------------
+void enum_categories()
+{
+#define catentry(n) {#n,n}
+  struct cat { const char* catname; GUID g; };
+  cat cats[] = {
+    catentry(CLSID_VideoInputDeviceCategory),
+    catentry(CLSID_LegacyAmFilterCategory),
+    catentry(CLSID_VideoCompressorCategory),
+    catentry(CLSID_AudioCompressorCategory),
+    catentry(CLSID_AudioInputDeviceCategory),
+    catentry(CLSID_AudioRendererCategory),
+    catentry(CLSID_MidiRendererCategory),
+    catentry(CLSID_TransmitCategory),
+    catentry(CLSID_DeviceControlCategory),
+    catentry(CLSID_ActiveMovieCategories),
+    catentry(CLSID_DVDHWDecodersCategory),
+    catentry(CLSID_MediaEncoderCategory),
+    catentry(CLSID_MediaMultiplexerCategory),
+  };
+
+  if (SUCCEEDED(CoInitializeEx(NULL, COINIT_MULTITHREADED)))
+  {
+    for (int i = 0; i < ARRAYSIZE(cats); ++i)
+    {
+      printf("*** %s\n", cats[i].catname);
+      enum_cat(cats[i].g);
+    }
+
+    CoUninitialize();
+  }
+#undef catentry
+}
+
 //===-----------------------------------------------------------===//
 //===-----------------------------------------------------------===//
 int main(int argc, const char** argv)
@@ -165,7 +239,9 @@ int main(int argc, const char** argv)
   UNREFERENCED_PARAMETER(argc);
   UNREFERENCED_PARAMETER(argv);
 
+  enum_categories();
+
   //test_camcap1();
-  test_camcap2();
+  //test_camcap2();
   return S_OK;
 }
