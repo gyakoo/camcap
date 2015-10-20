@@ -161,6 +161,7 @@ void test_camcap2()
 // -----------------------------------------------------------------
 // Enumerate all objects in this category, printing the name
 // -----------------------------------------------------------------
+/*
 void enum_cat(REFGUID cat)
 {
   HRESULT hr;
@@ -231,7 +232,7 @@ void enum_categories()
   }
 #undef catentry
 }
-
+*/
 //===-----------------------------------------------------------===//
 //===-----------------------------------------------------------===//
 int main(int argc, const char** argv)
@@ -239,9 +240,9 @@ int main(int argc, const char** argv)
   UNREFERENCED_PARAMETER(argc);
   UNREFERENCED_PARAMETER(argv);
 
-  enum_categories();
+  //enum_categories();
 
-  //test_camcap1();
+  test_camcap1();
   //test_camcap2();
   return S_OK;
 }
