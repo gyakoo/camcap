@@ -86,10 +86,11 @@ void test_camcap1()
   cc_idev_stop(cc, 0);
 
   double t0 = get_cur_time();
-  flip_buff(cc_idev_get_buffer(cc, 0), curmode.width, curmode.height, curmode.bitcount);
+  //flip_buff(cc_idev_get_buffer(cc, 0), curmode.width, curmode.height, curmode.bitcount);
   printf("%lf msecs. flipping\n", (get_cur_time() - t0)/1000.0);
-  stbi_write_png("defcap.png", curmode.width, curmode.height, curmode.bitcount>>3, cc_idev_get_buffer(cc, 0), curmode.width * (curmode.bitcount >> 3));
-
+  printf("Format: %s\n", cc_get_format_type_name(curmode.video_format_type) );
+  //stbi_write_png("defcap.png", curmode.width, curmode.height, curmode.bitcount>>3, cc_idev_get_buffer(cc, 0), curmode.width * (curmode.bitcount >> 3));
+  stbi_write_bmp("defcap.bmp", curmode.width, curmode.height, curmode.bitcount>>3, cc_idev_get_buffer(cc, 0) );
   cc_idev_deinit(cc, 0);
   cc_deinit(&cc);
 }

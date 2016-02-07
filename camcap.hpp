@@ -206,7 +206,8 @@ pGrabber->SetBufferSamples(TRUE);
 #define CC_VIDEOFMT_JPEG 4
 #define CC_VIDEOFMT_RGB565 5
 #define CC_VIDEOFMT_RGB555 6
-#define CC_VIDEOFMT_MAX 7 // <- ADD HERE
+#define CC_VIDEOFMT_YUY2 7
+#define CC_VIDEOFMT_MAX 8 // <- ADD HERE
 
 #ifdef __cplusplus
 extern "C" {
@@ -1213,6 +1214,7 @@ int ccdshow_mediasubtype_to_formattype(REFGUID subtype)
   else if (subtype == MEDIASUBTYPE_I420)  return CC_VIDEOFMT_YUV420P;
   else if (subtype == MEDIASUBTYPE_RGB565)return CC_VIDEOFMT_RGB565;
   else if (subtype == MEDIASUBTYPE_RGB555)return CC_VIDEOFMT_RGB555;
+  else if (subtype == MEDIASUBTYPE_YUY2)  return CC_VIDEOFMT_YUY2;
 
   return CC_VIDEOFMT_UNKNOWN;
 }
@@ -1290,7 +1292,7 @@ HRESULT ccdshow_wait_graph_state(dshowdevinfo* devinfo, OAFilterState desired_st
 //* COMMON */
 const char* cc_get_format_type_name(int format_type)
 {
-  static const char* names[CC_VIDEOFMT_MAX] = { "RGB24", "RGB32", "MJPEG", "YUV420P", "JPEG", "RGB565", "RGB555" };
+  static const char* names[CC_VIDEOFMT_MAX] = { "RGB24", "RGB32", "MJPEG", "YUV420P", "JPEG", "RGB565", "RGB555", "YUY2" };
   return format_type >= 0 && format_type < CC_VIDEOFMT_MAX ? names[format_type] : "UNKNOWN";
 }
 
